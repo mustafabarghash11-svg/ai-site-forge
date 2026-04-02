@@ -1,18 +1,21 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import ChatPanel, { ChatMessage } from "@/components/ChatPanel";
 import PreviewPanel from "@/components/PreviewPanel";
 import CodePanel, { CodeFile } from "@/components/CodePanel";
-import { generateWebsite } from "@/lib/mockAI";
+import { streamGenerateWebsite } from "@/lib/aiService";
 import { Code2, Eye, PanelRightOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { toast } from "@/hooks/use-toast";
 
 const Index = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isThinking, setIsThinking] = useState(false);
   const [previewHtml, setPreviewHtml] = useState("");
   const [codeFiles, setCodeFiles] = useState<CodeFile[]>([]);
   const [rightPanel, setRightPanel] = useState<"preview" | "code">("preview");
   const [showRightPanel, setShowRightPanel] = useState(true);
+  const assistantContentRef = useRef("");
 
   const handleSendMessage = async (content: string) => {
     const userMsg: ChatMessage = {
@@ -23,36 +26,104 @@ const Index = () => {
     };
     setMessages((prev) => [...prev, userMsg]);
     setIsGenerating(true);
+    setIsThinking(true);
     setShowRightPanel(true);
+    assistantContentRef.current = "";
+
+    // Build conversation history for context
+    const chatHistory = [...messages, userMsg].map((m) => ({
+      role: m.role as "user" | "assistant",
+      content: m.content,
+    }));
 
     try {
-      const result = await generateWebsite(content);
-      setPreviewHtml(result.html);
-      setCodeFiles(result.files);
-
-      const aiMsg: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        role: "assistant",
-        content: result.reply,
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, aiMsg]);
-    } catch {
-      const errMsg: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        role: "assistant",
-        content: "Sorry, something went wrong. Please try again.",
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, errMsg]);
-    } finally {
+      await streamGenerateWebsite(chatHistory, {
+        onThinking: (thinking) => {
+          setIsThinking(thinking);
+          if (!thinking) {
+            // AI started responding, create the assistant message
+            const aiMsgId = (Date.now() + 1).toString();
+            setMessages((prev) => [
+              ...prev,
+              { id: aiMsgId, role: "assistant", content: "", timestamp: new Date() },
+            ]);
+          }
+        },
+        onTextDelta: (delta) => {
+          assistantContentRef.current += delta;
+          const currentText = assistantContentRef.current;
+          setMessages((prev) => {
+            const last = prev[prev.length - 1];
+            if (last?.role === "assistant") {
+              return prev.map((m, i) =>
+                i === prev.length - 1 ? { ...m, content: currentText } : m
+              );
+            }
+            return [
+              ...prev,
+              {
+                id: (Date.now() + 1).toString(),
+                role: "assistant",
+                content: currentText,
+                timestamp: new Date(),
+              },
+            ];
+          });
+        },
+        onComplete: (result) => {
+          if (result.reply) {
+            setMessages((prev) => {
+              const last = prev[prev.length - 1];
+              if (last?.role === "assistant") {
+                return prev.map((m, i) =>
+                  i === prev.length - 1 ? { ...m, content: result.reply } : m
+                );
+              }
+              return [
+                ...prev,
+                {
+                  id: (Date.now() + 1).toString(),
+                  role: "assistant",
+                  content: result.reply,
+                  timestamp: new Date(),
+                },
+              ];
+            });
+          }
+          if (result.html) {
+            setPreviewHtml(result.html);
+            setRightPanel("preview");
+          }
+          if (result.files.length > 0) {
+            setCodeFiles(result.files);
+          }
+          setIsGenerating(false);
+          setIsThinking(false);
+        },
+        onError: (error) => {
+          toast({
+            title: "Error",
+            description: error,
+            variant: "destructive",
+          });
+          setIsGenerating(false);
+          setIsThinking(false);
+        },
+      });
+    } catch (e) {
+      toast({
+        title: "Connection Error",
+        description: "Failed to connect to AI. Please try again.",
+        variant: "destructive",
+      });
       setIsGenerating(false);
+      setIsThinking(false);
     }
   };
 
   return (
     <div className="flex h-screen bg-background overflow-hidden">
-      {/* Chat Panel - Left */}
+      {/* Chat Panel */}
       <div
         className={`flex flex-col border-r border-border transition-all duration-300 ${
           showRightPanel ? "w-[65%]" : "w-full"
@@ -62,13 +133,13 @@ const Index = () => {
           messages={messages}
           onSendMessage={handleSendMessage}
           isGenerating={isGenerating}
+          isThinking={isThinking}
         />
       </div>
 
-      {/* Right Panel - Preview/Code */}
+      {/* Right Panel */}
       {showRightPanel && (
         <div className="flex-1 flex flex-col min-w-0 animate-fade-in">
-          {/* Panel switcher tabs */}
           <div className="flex items-center justify-between px-3 py-2 bg-card border-b border-border">
             <div className="flex items-center gap-1">
               <Button
@@ -76,9 +147,7 @@ const Index = () => {
                 size="sm"
                 onClick={() => setRightPanel("preview")}
                 className={`h-7 text-xs gap-1.5 ${
-                  rightPanel === "preview"
-                    ? "bg-secondary text-primary"
-                    : "text-muted-foreground"
+                  rightPanel === "preview" ? "bg-secondary text-primary" : "text-muted-foreground"
                 }`}
               >
                 <Eye className="w-3.5 h-3.5" />
@@ -89,9 +158,7 @@ const Index = () => {
                 size="sm"
                 onClick={() => setRightPanel("code")}
                 className={`h-7 text-xs gap-1.5 ${
-                  rightPanel === "code"
-                    ? "bg-secondary text-primary"
-                    : "text-muted-foreground"
+                  rightPanel === "code" ? "bg-secondary text-primary" : "text-muted-foreground"
                 }`}
               >
                 <Code2 className="w-3.5 h-3.5" />
@@ -108,7 +175,6 @@ const Index = () => {
             </Button>
           </div>
 
-          {/* Panel content */}
           <div className="flex-1 min-h-0">
             {rightPanel === "preview" ? (
               <PreviewPanel html={previewHtml} isGenerating={isGenerating} />
@@ -119,7 +185,6 @@ const Index = () => {
         </div>
       )}
 
-      {/* Toggle panel button when hidden */}
       {!showRightPanel && (
         <button
           onClick={() => setShowRightPanel(true)}

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Send, Sparkles, Bot, User, Loader2 } from "lucide-react";
+import { Send, Sparkles, Bot, User, Loader2, Brain } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export interface ChatMessage {
@@ -13,16 +13,17 @@ interface ChatPanelProps {
   messages: ChatMessage[];
   onSendMessage: (message: string) => void;
   isGenerating: boolean;
+  isThinking: boolean;
 }
 
-const ChatPanel = ({ messages, onSendMessage, isGenerating }: ChatPanelProps) => {
+const ChatPanel = ({ messages, onSendMessage, isGenerating, isThinking }: ChatPanelProps) => {
   const [input, setInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, isGenerating, isThinking]);
 
   const handleSend = () => {
     if (!input.trim() || isGenerating) return;
@@ -54,7 +55,7 @@ const ChatPanel = ({ messages, onSendMessage, isGenerating }: ChatPanelProps) =>
         </div>
         <div>
           <h2 className="text-sm font-semibold text-foreground">AI Website Builder</h2>
-          <p className="text-xs text-muted-foreground">Describe your website and I'll build it</p>
+          <p className="text-xs text-muted-foreground">Powered by AI — builds complex, production-ready websites</p>
         </div>
       </div>
 
@@ -68,14 +69,14 @@ const ChatPanel = ({ messages, onSendMessage, isGenerating }: ChatPanelProps) =>
             <div>
               <h3 className="text-lg font-semibold text-foreground mb-1">What would you like to build?</h3>
               <p className="text-sm text-muted-foreground max-w-sm">
-                Describe your website idea and I'll generate it with the right tech stack.
+                Describe your website idea in detail. I'll think deeply and generate a complete, production-quality website.
               </p>
             </div>
             <div className="grid grid-cols-1 gap-2 w-full max-w-sm mt-2">
               {[
-                "Build me a portfolio website with dark theme",
-                "Create an e-commerce landing page",
-                "Design a SaaS dashboard with charts",
+                "Build a modern portfolio with dark theme, animated hero, projects grid, and contact form",
+                "Create a full e-commerce landing page with product cards, cart, and checkout flow",
+                "Design a SaaS dashboard with sidebar nav, analytics charts, and user management",
               ].map((suggestion) => (
                 <button
                   key={suggestion}
@@ -115,14 +116,33 @@ const ChatPanel = ({ messages, onSendMessage, isGenerating }: ChatPanelProps) =>
           </div>
         ))}
 
-        {isGenerating && (
+        {/* Thinking state */}
+        {isThinking && (
+          <div className="flex items-start gap-3 animate-fade-in">
+            <div className="flex-shrink-0 w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center">
+              <Brain className="w-4 h-4 text-primary animate-pulse" />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center gap-2 text-sm text-primary font-medium">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                Thinking deeply...
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Analyzing your requirements and planning the best architecture
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Generating state (streaming) */}
+        {isGenerating && !isThinking && (
           <div className="flex items-start gap-3 animate-fade-in">
             <div className="flex-shrink-0 w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center">
               <Bot className="w-4 h-4 text-primary" />
             </div>
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="w-4 h-4 animate-spin text-primary" />
-              Generating your website...
+              Generating website code...
             </div>
           </div>
         )}
@@ -138,7 +158,7 @@ const ChatPanel = ({ messages, onSendMessage, isGenerating }: ChatPanelProps) =>
             value={input}
             onChange={handleTextareaChange}
             onKeyDown={handleKeyDown}
-            placeholder="Describe your website..."
+            placeholder="Describe your website in detail..."
             rows={1}
             className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground resize-none outline-none px-2 py-1.5 max-h-[150px]"
           />
