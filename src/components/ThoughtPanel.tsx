@@ -1,47 +1,53 @@
-import { CheckCircle2, Circle, Bookmark } from "lucide-react";
+import { CheckCircle2, Circle, Loader2, Bookmark } from "lucide-react";
 import { ThoughtBlock } from "@/lib/aiService";
 
 interface ThoughtPanelProps {
   thought: ThoughtBlock;
-  completedStepIndex: number; // index of last completed step (-1 = none)
+  completedStepIndex: number;
   isGenerating: boolean;
 }
 
 const ThoughtPanel = ({ thought, completedStepIndex, isGenerating }: ThoughtPanelProps) => {
+  const allDone = completedStepIndex >= thought.steps.length - 1 && !isGenerating;
+
   return (
-    <div className="my-2 rounded-xl border border-border bg-card overflow-hidden w-full max-w-sm">
+    <div className="my-2 rounded-xl border border-border bg-card overflow-hidden w-full max-w-xs shadow-sm">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border/60">
-        <span className="text-sm font-medium text-foreground">{thought.title}</span>
-        <Bookmark className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+      <div className="flex items-center justify-between px-4 py-3">
+        <span className="text-sm font-semibold text-foreground leading-snug pr-2">
+          {thought.title}
+        </span>
+        <Bookmark className="w-4 h-4 text-muted-foreground flex-shrink-0 opacity-50" />
       </div>
 
+      {/* Divider */}
+      <div className="h-px bg-border mx-0" />
+
       {/* Steps */}
-      <div className="px-4 py-3 space-y-2.5">
+      <div className="px-4 py-3 space-y-3">
         {thought.steps.map((step, i) => {
-          const isDone = i <= completedStepIndex;
-          const isActive = i === completedStepIndex + 1 && isGenerating;
+          const isDone = i <= completedStepIndex && !isGenerating ? true : i < completedStepIndex;
+          const isCurrentlyActive =
+            isGenerating && i === completedStepIndex;
+          const isPending = !isDone && !isCurrentlyActive;
 
           return (
-            <div key={i} className="flex items-start gap-2.5">
+            <div key={i} className="flex items-center gap-2.5">
               {isDone ? (
-                <CheckCircle2 className="w-4 h-4 text-muted-foreground flex-shrink-0 mt-0.5" />
+                <CheckCircle2 className="w-4 h-4 text-muted-foreground flex-shrink-0 opacity-70" />
+              ) : isCurrentlyActive ? (
+                <Loader2 className="w-4 h-4 text-primary flex-shrink-0 animate-spin" />
               ) : (
-                <Circle
-                  className={
-                    "w-4 h-4 flex-shrink-0 mt-0.5 " +
-                    (isActive ? "text-primary animate-pulse" : "text-muted-foreground/30")
-                  }
-                />
+                <Circle className="w-4 h-4 text-muted-foreground/30 flex-shrink-0" />
               )}
               <span
                 className={
-                  "text-xs leading-relaxed " +
+                  "text-xs leading-relaxed transition-colors duration-300 " +
                   (isDone
-                    ? "text-muted-foreground line-through decoration-muted-foreground/40"
-                    : isActive
-                    ? "text-foreground"
-                    : "text-muted-foreground/50")
+                    ? "text-muted-foreground/60 line-through"
+                    : isCurrentlyActive
+                    ? "text-foreground font-medium"
+                    : "text-muted-foreground/40")
                 }
               >
                 {step}
@@ -51,13 +57,16 @@ const ThoughtPanel = ({ thought, completedStepIndex, isGenerating }: ThoughtPane
         })}
       </div>
 
+      {/* Divider */}
+      <div className="h-px bg-border mx-0" />
+
       {/* Footer tabs */}
-      <div className="flex border-t border-border/60">
-        <button className="flex-1 py-2 text-xs text-muted-foreground hover:text-foreground transition-colors font-medium">
+      <div className="flex">
+        <button className="flex-1 py-2 text-xs text-muted-foreground hover:text-foreground transition-colors">
           Details
         </button>
-        <div className="w-px bg-border/60" />
-        <button className="flex-1 py-2 text-xs text-muted-foreground hover:text-foreground transition-colors font-medium">
+        <div className="w-px bg-border" />
+        <button className="flex-1 py-2 text-xs text-muted-foreground hover:text-foreground transition-colors">
           Preview
         </button>
       </div>
