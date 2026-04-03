@@ -2,6 +2,7 @@ import { useState, useRef } from "react";
 import ChatPanel, { ChatMessage } from "@/components/ChatPanel";
 import PreviewPanel from "@/components/PreviewPanel";
 import CodePanel, { CodeFile } from "@/components/CodePanel";
+import QuestionsDialog, { AIQuestion } from "@/components/QuestionsDialog";
 import { streamGenerateWebsite } from "@/lib/aiService";
 import { Code2, Eye, PanelRightOpen, Download } from "lucide-react";
 import JSZip from "jszip";
