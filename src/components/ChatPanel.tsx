@@ -1,12 +1,16 @@
 import { useState, useRef, useEffect } from "react";
 import { Send, Sparkles, Bot, User, Loader2, Brain } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import ThoughtPanel from "@/components/ThoughtPanel";
+import { ThoughtBlock } from "@/lib/aiService";
 
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
   timestamp: Date;
+  thought?: ThoughtBlock;
+  completedStepIndex?: number;
 }
 
 interface ChatPanelProps {
@@ -14,16 +18,25 @@ interface ChatPanelProps {
   onSendMessage: (message: string) => void;
   isGenerating: boolean;
   isThinking: boolean;
+  activeThought?: ThoughtBlock | null;
+  activeCompletedStep?: number;
 }
 
-const ChatPanel = ({ messages, onSendMessage, isGenerating, isThinking }: ChatPanelProps) => {
+const ChatPanel = ({
+  messages,
+  onSendMessage,
+  isGenerating,
+  isThinking,
+  activeThought,
+  activeCompletedStep = -1,
+}: ChatPanelProps) => {
   const [input, setInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isGenerating, isThinking]);
+  }, [messages, isGenerating, isThinking, activeThought]);
 
   const handleSend = () => {
     if (!input.trim() || isGenerating) return;
@@ -55,7 +68,9 @@ const ChatPanel = ({ messages, onSendMessage, isGenerating, isThinking }: ChatPa
         </div>
         <div>
           <h2 className="text-sm font-semibold text-foreground">AI Website Builder</h2>
-          <p className="text-xs text-muted-foreground">Powered by AI — builds complex, production-ready websites</p>
+          <p className="text-xs text-muted-foreground">
+            Powered by AI — builds complex, production-ready websites
+          </p>
         </div>
       </div>
 
@@ -67,9 +82,12 @@ const ChatPanel = ({ messages, onSendMessage, isGenerating, isThinking }: ChatPa
               <Sparkles className="w-8 h-8 text-primary" />
             </div>
             <div>
-              <h3 className="text-lg font-semibold text-foreground mb-1">What would you like to build?</h3>
+              <h3 className="text-lg font-semibold text-foreground mb-1">
+                What would you like to build?
+              </h3>
               <p className="text-sm text-muted-foreground max-w-sm">
-                Describe your website idea in detail. I'll think deeply and generate a complete, production-quality website.
+                Describe your website idea in detail. I'll think deeply and generate a complete,
+                production-quality website.
               </p>
             </div>
             <div className="grid grid-cols-1 gap-2 w-full max-w-sm mt-2">
@@ -108,15 +126,44 @@ const ChatPanel = ({ messages, onSendMessage, isGenerating, isThinking }: ChatPa
                 <p className="text-xs font-medium text-muted-foreground mb-1">
                   {msg.role === "assistant" ? "AI Builder" : "You"}
                 </p>
-                <div className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">
-                  {msg.content}
-                </div>
+
+                {/* Thought panel for this message (completed) */}
+                {msg.thought && (
+                  <ThoughtPanel
+                    thought={msg.thought}
+                    completedStepIndex={msg.thought.steps.length - 1}
+                    isGenerating={false}
+                  />
+                )}
+
+                {msg.content && (
+                  <div className="text-sm text-foreground leading-relaxed whitespace-pre-wrap mt-1">
+                    {msg.content}
+                  </div>
+                )}
               </div>
             </div>
           </div>
         ))}
 
-        {/* Thinking state */}
+        {/* Active thought panel while generating */}
+        {activeThought && isGenerating && (
+          <div className="flex items-start gap-3 animate-fade-in">
+            <div className="flex-shrink-0 w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center">
+              <Bot className="w-4 h-4 text-primary" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium text-muted-foreground mb-1">AI Builder</p>
+              <ThoughtPanel
+                thought={activeThought}
+                completedStepIndex={activeCompletedStep}
+                isGenerating={isGenerating}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Thinking state (before thought block arrives) */}
         {isThinking && (
           <div className="flex items-start gap-3 animate-fade-in">
             <div className="flex-shrink-0 w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center">
@@ -134,8 +181,8 @@ const ChatPanel = ({ messages, onSendMessage, isGenerating, isThinking }: ChatPa
           </div>
         )}
 
-        {/* Generating state (streaming) */}
-        {isGenerating && !isThinking && (
+        {/* Generating state: streaming text (after thought, no active thought yet shown) */}
+        {isGenerating && !isThinking && !activeThought && (
           <div className="flex items-start gap-3 animate-fade-in">
             <div className="flex-shrink-0 w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center">
               <Bot className="w-4 h-4 text-primary" />
