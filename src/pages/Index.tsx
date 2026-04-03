@@ -1,16 +1,22 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 import ChatPanel, { ChatMessage } from "@/components/ChatPanel";
 import PreviewPanel from "@/components/PreviewPanel";
 import CodePanel, { CodeFile } from "@/components/CodePanel";
 import QuestionsDialog, { AIQuestion } from "@/components/QuestionsDialog";
 import { streamGenerateWebsite } from "@/lib/aiService";
-import { Code2, Eye, PanelRightOpen, Download } from "lucide-react";
+import { Code2, Eye, PanelRightOpen, Download, ArrowRight } from "lucide-react";
 import JSZip from "jszip";
 import { saveAs } from "file-saver";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
 
 const Index = () => {
+  const { projectId } = useParams<{ projectId: string }>();
+  const navigate = useNavigate();
+  const { user } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
@@ -22,6 +28,60 @@ const Index = () => {
   const [aiQuestions, setAiQuestions] = useState<AIQuestion[]>([]);
   const [showQuestions, setShowQuestions] = useState(false);
   const [pendingUserMessage, setPendingUserMessage] = useState("");
+  const [projectLoaded, setProjectLoaded] = useState(false);
+
+  // Load project data
+  useEffect(() => {
+    if (!projectId) return;
+    const load = async () => {
+      const { data, error } = await supabase
+        .from("projects")
+        .select("*")
+        .eq("id", projectId)
+        .single();
+
+      if (error || !data) {
+        toast({ title: "خطأ", description: "المشروع غير موجود", variant: "destructive" });
+        navigate("/");
+        return;
+      }
+
+      if (data.chat_history && Array.isArray(data.chat_history)) {
+        setMessages(
+          (data.chat_history as any[]).map((m: any) => ({
+            ...m,
+            timestamp: new Date(m.timestamp),
+          }))
+        );
+      }
+      if (data.preview_html) setPreviewHtml(data.preview_html);
+      if (data.code_files && Array.isArray(data.code_files)) {
+        setCodeFiles(data.code_files as unknown as CodeFile[]);
+      }
+      setProjectLoaded(true);
+    };
+    load();
+  }, [projectId]);
+
+  // Auto-save project
+  useEffect(() => {
+    if (!projectId || !projectLoaded) return;
+    const timeout = setTimeout(() => {
+      supabase
+        .from("projects")
+        .update({
+          preview_html: previewHtml || null,
+          code_files: codeFiles as any,
+          chat_history: messages.map((m) => ({ ...m, timestamp: m.timestamp.toISOString() })) as any,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", projectId)
+        .then(({ error }) => {
+          if (error) console.error("Auto-save error:", error);
+        });
+    }, 2000);
+    return () => clearTimeout(timeout);
+  }, [messages, previewHtml, codeFiles, projectId, projectLoaded]);
 
   const handleDownloadZip = async () => {
     if (codeFiles.length === 0 && !previewHtml) {
@@ -50,7 +110,6 @@ const Index = () => {
     setShowRightPanel(true);
     assistantContentRef.current = "";
 
-    // Build conversation history for context
     const chatHistory = [...messages, userMsg].map((m) => ({
       role: m.role as "user" | "assistant",
       content: m.content,
@@ -61,7 +120,6 @@ const Index = () => {
         onThinking: (thinking) => {
           setIsThinking(thinking);
           if (!thinking) {
-            // AI started responding, create the assistant message
             const aiMsgId = (Date.now() + 1).toString();
             setMessages((prev) => [
               ...prev,
@@ -81,17 +139,11 @@ const Index = () => {
             }
             return [
               ...prev,
-              {
-                id: (Date.now() + 1).toString(),
-                role: "assistant",
-                content: currentText,
-                timestamp: new Date(),
-              },
+              { id: (Date.now() + 1).toString(), role: "assistant", content: currentText, timestamp: new Date() },
             ];
           });
         },
         onComplete: (result) => {
-          // Handle clarifying questions
           if (result.questions && result.questions.length > 0) {
             setAiQuestions(result.questions);
             setShowQuestions(true);
@@ -100,7 +152,6 @@ const Index = () => {
             setIsThinking(false);
             return;
           }
-
           if (result.reply) {
             setMessages((prev) => {
               const last = prev[prev.length - 1];
@@ -109,43 +160,22 @@ const Index = () => {
                   i === prev.length - 1 ? { ...m, content: result.reply } : m
                 );
               }
-              return [
-                ...prev,
-                {
-                  id: (Date.now() + 1).toString(),
-                  role: "assistant",
-                  content: result.reply,
-                  timestamp: new Date(),
-                },
-              ];
+              return [...prev, { id: (Date.now() + 1).toString(), role: "assistant", content: result.reply, timestamp: new Date() }];
             });
           }
-          if (result.html) {
-            setPreviewHtml(result.html);
-            setRightPanel("preview");
-          }
-          if (result.files.length > 0) {
-            setCodeFiles(result.files);
-          }
+          if (result.html) { setPreviewHtml(result.html); setRightPanel("preview"); }
+          if (result.files.length > 0) setCodeFiles(result.files);
           setIsGenerating(false);
           setIsThinking(false);
         },
         onError: (error) => {
-          toast({
-            title: "Error",
-            description: error,
-            variant: "destructive",
-          });
+          toast({ title: "Error", description: error, variant: "destructive" });
           setIsGenerating(false);
           setIsThinking(false);
         },
       });
     } catch (e) {
-      toast({
-        title: "Connection Error",
-        description: "Failed to connect to AI. Please try again.",
-        variant: "destructive",
-      });
+      toast({ title: "Connection Error", description: "Failed to connect to AI. Please try again.", variant: "destructive" });
       setIsGenerating(false);
       setIsThinking(false);
     }
@@ -153,14 +183,8 @@ const Index = () => {
 
   const handleQuestionsSubmit = (answers: Record<string, string>) => {
     setShowQuestions(false);
-    // Format answers and send back to AI
-    const answersText = aiQuestions
-      .map((q) => `${q.question}: ${answers[q.id]}`)
-      .join("\n");
-    
+    const answersText = aiQuestions.map((q) => `${q.question}: ${answers[q.id]}`).join("\n");
     const fullMessage = `${pendingUserMessage}\n\nAnswers:\n${answersText}`;
-    
-    // Add answers as a user message in chat
     const userMsg: ChatMessage = {
       id: Date.now().toString(),
       role: "user",
@@ -168,102 +192,55 @@ const Index = () => {
       timestamp: new Date(),
     };
     setMessages((prev) => [...prev, userMsg]);
-
-    // Now send with answers included
     handleSendMessage(fullMessage);
   };
 
   return (
     <div className="flex h-screen bg-background overflow-hidden">
-      {/* Chat Panel */}
-      <div
-        className={`flex flex-col border-r border-border transition-all duration-300 ${
-          showRightPanel ? "w-[65%]" : "w-full"
-        }`}
-      >
-        <ChatPanel
-          messages={messages}
-          onSendMessage={handleSendMessage}
-          isGenerating={isGenerating}
-          isThinking={isThinking}
-        />
+      <div className={`flex flex-col border-r border-border transition-all duration-300 ${showRightPanel ? "w-[65%]" : "w-full"}`}>
+        {/* Back button */}
+        <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-card">
+          <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-muted-foreground" onClick={() => navigate("/")}>
+            <ArrowRight className="w-3.5 h-3.5" />
+            المشاريع
+          </Button>
+        </div>
+        <ChatPanel messages={messages} onSendMessage={handleSendMessage} isGenerating={isGenerating} isThinking={isThinking} />
       </div>
 
-      {/* Right Panel */}
       {showRightPanel && (
         <div className="flex-1 flex flex-col min-w-0 animate-fade-in">
           <div className="flex items-center justify-between px-3 py-2 bg-card border-b border-border">
             <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setRightPanel("preview")}
-                className={`h-7 text-xs gap-1.5 ${
-                  rightPanel === "preview" ? "bg-secondary text-primary" : "text-muted-foreground"
-                }`}
-              >
-                <Eye className="w-3.5 h-3.5" />
-                Preview
+              <Button variant="ghost" size="sm" onClick={() => setRightPanel("preview")} className={`h-7 text-xs gap-1.5 ${rightPanel === "preview" ? "bg-secondary text-primary" : "text-muted-foreground"}`}>
+                <Eye className="w-3.5 h-3.5" /> Preview
               </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setRightPanel("code")}
-                className={`h-7 text-xs gap-1.5 ${
-                  rightPanel === "code" ? "bg-secondary text-primary" : "text-muted-foreground"
-                }`}
-              >
-                <Code2 className="w-3.5 h-3.5" />
-                Code
+              <Button variant="ghost" size="sm" onClick={() => setRightPanel("code")} className={`h-7 text-xs gap-1.5 ${rightPanel === "code" ? "bg-secondary text-primary" : "text-muted-foreground"}`}>
+                <Code2 className="w-3.5 h-3.5" /> Code
               </Button>
             </div>
             <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleDownloadZip}
-                disabled={codeFiles.length === 0 && !previewHtml}
-                className="h-7 text-xs gap-1.5 text-muted-foreground"
-              >
-                <Download className="w-3.5 h-3.5" />
-                ZIP
+              <Button variant="ghost" size="sm" onClick={handleDownloadZip} disabled={codeFiles.length === 0 && !previewHtml} className="h-7 text-xs gap-1.5 text-muted-foreground">
+                <Download className="w-3.5 h-3.5" /> ZIP
               </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowRightPanel(false)}
-                className="h-7 w-7 p-0 text-muted-foreground"
-              >
+              <Button variant="ghost" size="sm" onClick={() => setShowRightPanel(false)} className="h-7 w-7 p-0 text-muted-foreground">
                 <PanelRightOpen className="w-3.5 h-3.5" />
               </Button>
             </div>
           </div>
-
           <div className="flex-1 min-h-0">
-            {rightPanel === "preview" ? (
-              <PreviewPanel html={previewHtml} isGenerating={isGenerating} />
-            ) : (
-              <CodePanel files={codeFiles} />
-            )}
+            {rightPanel === "preview" ? <PreviewPanel html={previewHtml} isGenerating={isGenerating} /> : <CodePanel files={codeFiles} />}
           </div>
         </div>
       )}
 
       {!showRightPanel && (
-        <button
-          onClick={() => setShowRightPanel(true)}
-          className="fixed right-4 top-4 z-50 p-2 rounded-lg bg-secondary border border-border text-muted-foreground hover:text-foreground transition-colors"
-        >
+        <button onClick={() => setShowRightPanel(true)} className="fixed right-4 top-4 z-50 p-2 rounded-lg bg-secondary border border-border text-muted-foreground hover:text-foreground transition-colors">
           <PanelRightOpen className="w-4 h-4" />
         </button>
       )}
 
-      <QuestionsDialog
-        open={showQuestions}
-        questions={aiQuestions}
-        onSubmit={handleQuestionsSubmit}
-        onClose={() => setShowQuestions(false)}
-      />
+      <QuestionsDialog open={showQuestions} questions={aiQuestions} onSubmit={handleQuestionsSubmit} onClose={() => setShowQuestions(false)} />
     </div>
   );
 };
