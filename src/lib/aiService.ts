@@ -3,11 +3,17 @@ import { AIQuestion } from "@/components/QuestionsDialog";
 
 const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-website`;
 
+export interface ThoughtBlock {
+  title: string;
+  steps: string[];
+}
+
 export interface GenerationResult {
   reply: string;
   html: string;
   files: CodeFile[];
   questions?: AIQuestion[];
+  thought?: ThoughtBlock;
 }
 
 interface StreamCallbacks {
@@ -15,6 +21,8 @@ interface StreamCallbacks {
   onComplete: (result: GenerationResult) => void;
   onError: (error: string) => void;
   onThinking: (thinking: boolean) => void;
+  onThought?: (thought: ThoughtBlock) => void;
+  onStepComplete?: (stepIndex: number) => void;
 }
 
 interface ChatMsg {
@@ -55,6 +63,47 @@ export async function streamGenerateWebsite(
   let fullContent = "";
   let streamDone = false;
 
+  // Thought block state
+  let thoughtParsed = false;
+  let thoughtBlock: ThoughtBlock | null = null;
+  let currentStepIndex = -1;
+
+  // Helper: try to extract and emit thought as content accumulates
+  const tryParseThought = (content: string) => {
+    if (thoughtParsed) return;
+    const start = content.indexOf("|||THOUGHT_START|||");
+    const end = content.indexOf("|||THOUGHT_END|||");
+    if (start !== -1 && end !== -1) {
+      const json = content.slice(start + "|||THOUGHT_START|||".length, end).trim();
+      try {
+        const parsed: ThoughtBlock = JSON.parse(json);
+        thoughtBlock = parsed;
+        thoughtParsed = true;
+        callbacks.onThought?.(parsed);
+        currentStepIndex = 0;
+        callbacks.onStepComplete?.(0);
+      } catch {}
+    }
+  };
+
+  // Simulate steps completing as text streams in
+  const tryAdvanceSteps = (content: string) => {
+    if (!thoughtBlock || currentStepIndex >= thoughtBlock.steps.length - 1) return;
+    // Each step completes roughly after each 600 chars of content past the thought block
+    const thoughtEnd = content.indexOf("|||THOUGHT_END|||");
+    if (thoughtEnd === -1) return;
+    const afterThought = content.slice(thoughtEnd + "|||THOUGHT_END|||".length);
+    const charsPerStep = 600;
+    const expectedStep = Math.min(
+      Math.floor(afterThought.length / charsPerStep),
+      thoughtBlock.steps.length - 1
+    );
+    if (expectedStep > currentStepIndex) {
+      currentStepIndex = expectedStep;
+      callbacks.onStepComplete?.(currentStepIndex);
+    }
+  };
+
   while (!streamDone) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -80,10 +129,31 @@ export async function streamGenerateWebsite(
         const content = parsed.choices?.[0]?.delta?.content as string | undefined;
         if (content) {
           fullContent += content;
-          // Only stream the text part (before code marker)
-          const markerIdx = fullContent.indexOf("|||CODE_START|||");
-          if (markerIdx === -1) {
-            callbacks.onTextDelta(content);
+
+          // Try to parse thought block as it arrives
+          tryParseThought(fullContent);
+          tryAdvanceSteps(fullContent);
+
+          // Only stream the visible text part (after THOUGHT_END, before CODE_START)
+          const thoughtEndMarker = "|||THOUGHT_END|||";
+          const codeStartMarker = "|||CODE_START|||";
+          const thoughtEndIdx = fullContent.indexOf(thoughtEndMarker);
+          const codeMarkerIdx = fullContent.indexOf(codeStartMarker);
+
+          if (thoughtEndIdx !== -1 && codeMarkerIdx === -1) {
+            // Stream text between thought block and code marker
+            const visibleStart = thoughtEndIdx + thoughtEndMarker.length;
+            const prevVisibleLen = Math.max(0, fullContent.length - content.length - visibleStart);
+            const newVisible = fullContent.slice(visibleStart);
+            if (newVisible.length > prevVisibleLen) {
+              callbacks.onTextDelta(content);
+            }
+          } else if (thoughtEndIdx === -1 && codeMarkerIdx === -1) {
+            // No thought block yet - might be a conversational response
+            const hasThoughtStart = fullContent.includes("|||THOUGHT_START|||");
+            if (!hasThoughtStart) {
+              callbacks.onTextDelta(content);
+            }
           }
         }
       } catch {
@@ -110,16 +180,19 @@ export async function streamGenerateWebsite(
     }
   }
 
+  // Mark all steps complete at the end
+  if (thoughtBlock) {
+    callbacks.onStepComplete?.(thoughtBlock.steps.length - 1);
+  }
+
   // Check for questions
   const questionsStartIdx = fullContent.indexOf("|||QUESTIONS_START|||");
   const questionsEndIdx = fullContent.indexOf("|||QUESTIONS_END|||");
-  
+
   if (questionsStartIdx !== -1 && questionsEndIdx !== -1) {
-    const questionsJson = fullContent.slice(
-      questionsStartIdx + "|||QUESTIONS_START|||".length,
-      questionsEndIdx
-    ).trim();
-    
+    const questionsJson = fullContent
+      .slice(questionsStartIdx + "|||QUESTIONS_START|||".length, questionsEndIdx)
+      .trim();
     try {
       const questions: AIQuestion[] = JSON.parse(questionsJson);
       callbacks.onComplete({ reply: "", html: "", files: [], questions });
@@ -129,11 +202,21 @@ export async function streamGenerateWebsite(
     }
   }
 
+  // Strip thought block from content before parsing the rest
+  let processedContent = fullContent;
+  const thoughtStart = processedContent.indexOf("|||THOUGHT_START|||");
+  const thoughtEnd = processedContent.indexOf("|||THOUGHT_END|||");
+  if (thoughtStart !== -1 && thoughtEnd !== -1) {
+    processedContent =
+      processedContent.slice(0, thoughtStart) +
+      processedContent.slice(thoughtEnd + "|||THOUGHT_END|||".length);
+  }
+
   // Parse the code result
-  const markerIdx = fullContent.indexOf("|||CODE_START|||");
+  const markerIdx = processedContent.indexOf("|||CODE_START|||");
   if (markerIdx !== -1) {
-    const textPart = fullContent.slice(0, markerIdx).trim();
-    const codePart = fullContent.slice(markerIdx + "|||CODE_START|||".length).trim();
+    const textPart = processedContent.slice(0, markerIdx).trim();
+    const codePart = processedContent.slice(markerIdx + "|||CODE_START|||".length).trim();
 
     let html = "";
     let files: CodeFile[] = [];
@@ -155,8 +238,13 @@ export async function streamGenerateWebsite(
       console.error("Failed to parse code JSON:", e);
     }
 
-    callbacks.onComplete({ reply: textPart, html, files });
+    callbacks.onComplete({ reply: textPart, html, files, thought: thoughtBlock || undefined });
   } else {
-    callbacks.onComplete({ reply: fullContent.trim(), html: "", files: [] });
+    callbacks.onComplete({
+      reply: processedContent.trim(),
+      html: "",
+      files: [],
+      thought: thoughtBlock || undefined,
+    });
   }
 }
