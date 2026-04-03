@@ -257,6 +257,13 @@ const Index = () => {
           <PanelRightOpen className="w-4 h-4" />
         </button>
       )}
+
+      <QuestionsDialog
+        open={showQuestions}
+        questions={aiQuestions}
+        onSubmit={handleQuestionsSubmit}
+        onClose={() => setShowQuestions(false)}
+      />
     </div>
   );
 };
