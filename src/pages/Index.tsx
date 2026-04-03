@@ -3,7 +3,9 @@ import ChatPanel, { ChatMessage } from "@/components/ChatPanel";
 import PreviewPanel from "@/components/PreviewPanel";
 import CodePanel, { CodeFile } from "@/components/CodePanel";
 import { streamGenerateWebsite } from "@/lib/aiService";
-import { Code2, Eye, PanelRightOpen } from "lucide-react";
+import { Code2, Eye, PanelRightOpen, Download } from "lucide-react";
+import JSZip from "jszip";
+import { saveAs } from "file-saver";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
 
