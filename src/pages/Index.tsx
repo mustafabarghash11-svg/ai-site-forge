@@ -6,7 +6,7 @@ import ChatPanel, { ChatMessage } from "@/components/ChatPanel";
 import PreviewPanel from "@/components/PreviewPanel";
 import CodePanel, { CodeFile } from "@/components/CodePanel";
 import QuestionsDialog, { AIQuestion } from "@/components/QuestionsDialog";
-import { streamGenerateWebsite } from "@/lib/aiService";
+import { streamGenerateWebsite, ThoughtBlock } from "@/lib/aiService";
 import { Code2, Eye, PanelRightOpen, Download, ArrowRight } from "lucide-react";
 import JSZip from "jszip";
 import { saveAs } from "file-saver";
@@ -29,6 +29,10 @@ const Index = () => {
   const [showQuestions, setShowQuestions] = useState(false);
   const [pendingUserMessage, setPendingUserMessage] = useState("");
   const [projectLoaded, setProjectLoaded] = useState(false);
+
+  // Thought block state
+  const [activeThought, setActiveThought] = useState<ThoughtBlock | null>(null);
+  const [activeCompletedStep, setActiveCompletedStep] = useState(-1);
 
   // Load project data
   useEffect(() => {
@@ -72,7 +76,10 @@ const Index = () => {
         .update({
           preview_html: previewHtml || null,
           code_files: codeFiles as any,
-          chat_history: messages.map((m) => ({ ...m, timestamp: m.timestamp.toISOString() })) as any,
+          chat_history: messages.map((m) => ({
+            ...m,
+            timestamp: m.timestamp.toISOString(),
+          })) as any,
           updated_at: new Date().toISOString(),
         })
         .eq("id", projectId)
@@ -110,23 +117,43 @@ const Index = () => {
     setShowRightPanel(true);
     assistantContentRef.current = "";
 
+    // Reset thought state
+    setActiveThought(null);
+    setActiveCompletedStep(-1);
+
     const chatHistory = [...messages, userMsg].map((m) => ({
       role: m.role as "user" | "assistant",
       content: m.content,
     }));
+
+    // Track the thought for attaching to the final message
+    let capturedThought: ThoughtBlock | null = null;
+    // Track the AI message id
+    let aiMsgId: string | null = null;
 
     try {
       await streamGenerateWebsite(chatHistory, {
         onThinking: (thinking) => {
           setIsThinking(thinking);
           if (!thinking) {
-            const aiMsgId = (Date.now() + 1).toString();
+            aiMsgId = (Date.now() + 1).toString();
             setMessages((prev) => [
               ...prev,
-              { id: aiMsgId, role: "assistant", content: "", timestamp: new Date() },
+              { id: aiMsgId!, role: "assistant", content: "", timestamp: new Date() },
             ]);
           }
         },
+
+        onThought: (thought) => {
+          capturedThought = thought;
+          setActiveThought(thought);
+          setActiveCompletedStep(0);
+        },
+
+        onStepComplete: (stepIndex) => {
+          setActiveCompletedStep(stepIndex);
+        },
+
         onTextDelta: (delta) => {
           assistantContentRef.current += delta;
           const currentText = assistantContentRef.current;
@@ -139,10 +166,16 @@ const Index = () => {
             }
             return [
               ...prev,
-              { id: (Date.now() + 1).toString(), role: "assistant", content: currentText, timestamp: new Date() },
+              {
+                id: (Date.now() + 1).toString(),
+                role: "assistant",
+                content: currentText,
+                timestamp: new Date(),
+              },
             ];
           });
         },
+
         onComplete: (result) => {
           if (result.questions && result.questions.length > 0) {
             setAiQuestions(result.questions);
@@ -150,9 +183,24 @@ const Index = () => {
             setPendingUserMessage(content);
             setIsGenerating(false);
             setIsThinking(false);
+            setActiveThought(null);
             return;
           }
-          if (result.reply) {
+
+          // Attach the captured thought to the last assistant message
+          if (capturedThought) {
+            setMessages((prev) => {
+              const last = prev[prev.length - 1];
+              if (last?.role === "assistant") {
+                return prev.map((m, i) =>
+                  i === prev.length - 1
+                    ? { ...m, content: result.reply || m.content, thought: capturedThought! }
+                    : m
+                );
+              }
+              return prev;
+            });
+          } else if (result.reply) {
             setMessages((prev) => {
               const last = prev[prev.length - 1];
               if (last?.role === "assistant") {
@@ -160,22 +208,45 @@ const Index = () => {
                   i === prev.length - 1 ? { ...m, content: result.reply } : m
                 );
               }
-              return [...prev, { id: (Date.now() + 1).toString(), role: "assistant", content: result.reply, timestamp: new Date() }];
+              return [
+                ...prev,
+                {
+                  id: (Date.now() + 1).toString(),
+                  role: "assistant",
+                  content: result.reply,
+                  timestamp: new Date(),
+                },
+              ];
             });
           }
-          if (result.html) { setPreviewHtml(result.html); setRightPanel("preview"); }
+
+          if (result.html) {
+            setPreviewHtml(result.html);
+            setRightPanel("preview");
+          }
           if (result.files.length > 0) setCodeFiles(result.files);
+
+          // Clear active thought
+          setActiveThought(null);
+          setActiveCompletedStep(-1);
           setIsGenerating(false);
           setIsThinking(false);
         },
+
         onError: (error) => {
           toast({ title: "Error", description: error, variant: "destructive" });
+          setActiveThought(null);
           setIsGenerating(false);
           setIsThinking(false);
         },
       });
     } catch (e) {
-      toast({ title: "Connection Error", description: "Failed to connect to AI. Please try again.", variant: "destructive" });
+      toast({
+        title: "Connection Error",
+        description: "Failed to connect to AI. Please try again.",
+        variant: "destructive",
+      });
+      setActiveThought(null);
       setIsGenerating(false);
       setIsThinking(false);
     }
@@ -188,7 +259,9 @@ const Index = () => {
     const userMsg: ChatMessage = {
       id: Date.now().toString(),
       role: "user",
-      content: `✅ تم تحديد التفضيلات:\n${aiQuestions.map((q) => `• ${q.question} → ${answers[q.id]}`).join("\n")}`,
+      content:
+        "تم تحديد التفضيلات:\n" +
+        aiQuestions.map((q) => "- " + q.question + " -> " + answers[q.id]).join("\n"),
       timestamp: new Date(),
     };
     setMessages((prev) => [...prev, userMsg]);
@@ -197,50 +270,103 @@ const Index = () => {
 
   return (
     <div className="flex h-screen bg-background overflow-hidden">
-      <div className={`flex flex-col border-r border-border transition-all duration-300 ${showRightPanel ? "w-[65%]" : "w-full"}`}>
+      <div
+        className={`flex flex-col border-r border-border transition-all duration-300 ${
+          showRightPanel ? "w-[65%]" : "w-full"
+        }`}
+      >
         {/* Back button */}
         <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-card">
-          <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-muted-foreground" onClick={() => navigate("/")}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs gap-1 text-muted-foreground"
+            onClick={() => navigate("/")}
+          >
             <ArrowRight className="w-3.5 h-3.5" />
             المشاريع
           </Button>
         </div>
-        <ChatPanel messages={messages} onSendMessage={handleSendMessage} isGenerating={isGenerating} isThinking={isThinking} />
+        <ChatPanel
+          messages={messages}
+          onSendMessage={handleSendMessage}
+          isGenerating={isGenerating}
+          isThinking={isThinking}
+          activeThought={activeThought}
+          activeCompletedStep={activeCompletedStep}
+        />
       </div>
 
       {showRightPanel && (
         <div className="flex-1 flex flex-col min-w-0 animate-fade-in">
           <div className="flex items-center justify-between px-3 py-2 bg-card border-b border-border">
             <div className="flex items-center gap-1">
-              <Button variant="ghost" size="sm" onClick={() => setRightPanel("preview")} className={`h-7 text-xs gap-1.5 ${rightPanel === "preview" ? "bg-secondary text-primary" : "text-muted-foreground"}`}>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setRightPanel("preview")}
+                className={`h-7 text-xs gap-1.5 ${
+                  rightPanel === "preview" ? "bg-secondary text-primary" : "text-muted-foreground"
+                }`}
+              >
                 <Eye className="w-3.5 h-3.5" /> Preview
               </Button>
-              <Button variant="ghost" size="sm" onClick={() => setRightPanel("code")} className={`h-7 text-xs gap-1.5 ${rightPanel === "code" ? "bg-secondary text-primary" : "text-muted-foreground"}`}>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setRightPanel("code")}
+                className={`h-7 text-xs gap-1.5 ${
+                  rightPanel === "code" ? "bg-secondary text-primary" : "text-muted-foreground"
+                }`}
+              >
                 <Code2 className="w-3.5 h-3.5" /> Code
               </Button>
             </div>
             <div className="flex items-center gap-1">
-              <Button variant="ghost" size="sm" onClick={handleDownloadZip} disabled={codeFiles.length === 0 && !previewHtml} className="h-7 text-xs gap-1.5 text-muted-foreground">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleDownloadZip}
+                disabled={codeFiles.length === 0 && !previewHtml}
+                className="h-7 text-xs gap-1.5 text-muted-foreground"
+              >
                 <Download className="w-3.5 h-3.5" /> ZIP
               </Button>
-              <Button variant="ghost" size="sm" onClick={() => setShowRightPanel(false)} className="h-7 w-7 p-0 text-muted-foreground">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowRightPanel(false)}
+                className="h-7 w-7 p-0 text-muted-foreground"
+              >
                 <PanelRightOpen className="w-3.5 h-3.5" />
               </Button>
             </div>
           </div>
           <div className="flex-1 min-h-0">
-            {rightPanel === "preview" ? <PreviewPanel html={previewHtml} isGenerating={isGenerating} /> : <CodePanel files={codeFiles} />}
+            {rightPanel === "preview" ? (
+              <PreviewPanel html={previewHtml} isGenerating={isGenerating} />
+            ) : (
+              <CodePanel files={codeFiles} />
+            )}
           </div>
         </div>
       )}
 
       {!showRightPanel && (
-        <button onClick={() => setShowRightPanel(true)} className="fixed right-4 top-4 z-50 p-2 rounded-lg bg-secondary border border-border text-muted-foreground hover:text-foreground transition-colors">
+        <button
+          onClick={() => setShowRightPanel(true)}
+          className="fixed right-4 top-4 z-50 p-2 rounded-lg bg-secondary border border-border text-muted-foreground hover:text-foreground transition-colors"
+        >
           <PanelRightOpen className="w-4 h-4" />
         </button>
       )}
 
-      <QuestionsDialog open={showQuestions} questions={aiQuestions} onSubmit={handleQuestionsSubmit} onClose={() => setShowQuestions(false)} />
+      <QuestionsDialog
+        open={showQuestions}
+        questions={aiQuestions}
+        onSubmit={handleQuestionsSubmit}
+        onClose={() => setShowQuestions(false)}
+      />
     </div>
   );
 };
