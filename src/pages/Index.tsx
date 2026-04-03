@@ -56,7 +56,7 @@ const Index = () => {
       }
       if (data.preview_html) setPreviewHtml(data.preview_html);
       if (data.code_files && Array.isArray(data.code_files)) {
-        setCodeFiles(data.code_files as CodeFile[]);
+        setCodeFiles(data.code_files as unknown as CodeFile[]);
       }
       setProjectLoaded(true);
     };
