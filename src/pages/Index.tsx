@@ -181,14 +181,26 @@ const Index = () => {
                 Code
               </Button>
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowRightPanel(false)}
-              className="h-7 w-7 p-0 text-muted-foreground"
-            >
-              <PanelRightOpen className="w-3.5 h-3.5" />
-            </Button>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleDownloadZip}
+                disabled={codeFiles.length === 0 && !previewHtml}
+                className="h-7 text-xs gap-1.5 text-muted-foreground"
+              >
+                <Download className="w-3.5 h-3.5" />
+                ZIP
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowRightPanel(false)}
+                className="h-7 w-7 p-0 text-muted-foreground"
+              >
+                <PanelRightOpen className="w-3.5 h-3.5" />
+              </Button>
+            </div>
           </div>
 
           <div className="flex-1 min-h-0">
