@@ -151,6 +151,28 @@ const Index = () => {
     }
   };
 
+  const handleQuestionsSubmit = (answers: Record<string, string>) => {
+    setShowQuestions(false);
+    // Format answers and send back to AI
+    const answersText = aiQuestions
+      .map((q) => `${q.question}: ${answers[q.id]}`)
+      .join("\n");
+    
+    const fullMessage = `${pendingUserMessage}\n\nAnswers:\n${answersText}`;
+    
+    // Add answers as a user message in chat
+    const userMsg: ChatMessage = {
+      id: Date.now().toString(),
+      role: "user",
+      content: `✅ تم تحديد التفضيلات:\n${aiQuestions.map((q) => `• ${q.question} → ${answers[q.id]}`).join("\n")}`,
+      timestamp: new Date(),
+    };
+    setMessages((prev) => [...prev, userMsg]);
+
+    // Now send with answers included
+    handleSendMessage(fullMessage);
+  };
+
   return (
     <div className="flex h-screen bg-background overflow-hidden">
       {/* Chat Panel */}
