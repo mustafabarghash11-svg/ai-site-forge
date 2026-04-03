@@ -1,4 +1,5 @@
 import { CodeFile } from "@/components/CodePanel";
+import { AIQuestion } from "@/components/QuestionsDialog";
 
 const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-website`;
 
@@ -6,6 +7,7 @@ export interface GenerationResult {
   reply: string;
   html: string;
   files: CodeFile[];
+  questions?: AIQuestion[];
 }
 
 interface StreamCallbacks {
