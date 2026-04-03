@@ -2,6 +2,7 @@ import { useState, useRef } from "react";
 import ChatPanel, { ChatMessage } from "@/components/ChatPanel";
 import PreviewPanel from "@/components/PreviewPanel";
 import CodePanel, { CodeFile } from "@/components/CodePanel";
+import QuestionsDialog, { AIQuestion } from "@/components/QuestionsDialog";
 import { streamGenerateWebsite } from "@/lib/aiService";
 import { Code2, Eye, PanelRightOpen, Download } from "lucide-react";
 import JSZip from "jszip";
@@ -18,6 +19,9 @@ const Index = () => {
   const [rightPanel, setRightPanel] = useState<"preview" | "code">("preview");
   const [showRightPanel, setShowRightPanel] = useState(true);
   const assistantContentRef = useRef("");
+  const [aiQuestions, setAiQuestions] = useState<AIQuestion[]>([]);
+  const [showQuestions, setShowQuestions] = useState(false);
+  const [pendingUserMessage, setPendingUserMessage] = useState("");
 
   const handleDownloadZip = async () => {
     if (codeFiles.length === 0 && !previewHtml) {
@@ -87,6 +91,16 @@ const Index = () => {
           });
         },
         onComplete: (result) => {
+          // Handle clarifying questions
+          if (result.questions && result.questions.length > 0) {
+            setAiQuestions(result.questions);
+            setShowQuestions(true);
+            setPendingUserMessage(content);
+            setIsGenerating(false);
+            setIsThinking(false);
+            return;
+          }
+
           if (result.reply) {
             setMessages((prev) => {
               const last = prev[prev.length - 1];
@@ -135,6 +149,28 @@ const Index = () => {
       setIsGenerating(false);
       setIsThinking(false);
     }
+  };
+
+  const handleQuestionsSubmit = (answers: Record<string, string>) => {
+    setShowQuestions(false);
+    // Format answers and send back to AI
+    const answersText = aiQuestions
+      .map((q) => `${q.question}: ${answers[q.id]}`)
+      .join("\n");
+    
+    const fullMessage = `${pendingUserMessage}\n\nAnswers:\n${answersText}`;
+    
+    // Add answers as a user message in chat
+    const userMsg: ChatMessage = {
+      id: Date.now().toString(),
+      role: "user",
+      content: `✅ تم تحديد التفضيلات:\n${aiQuestions.map((q) => `• ${q.question} → ${answers[q.id]}`).join("\n")}`,
+      timestamp: new Date(),
+    };
+    setMessages((prev) => [...prev, userMsg]);
+
+    // Now send with answers included
+    handleSendMessage(fullMessage);
   };
 
   return (
@@ -221,6 +257,13 @@ const Index = () => {
           <PanelRightOpen className="w-4 h-4" />
         </button>
       )}
+
+      <QuestionsDialog
+        open={showQuestions}
+        questions={aiQuestions}
+        onSubmit={handleQuestionsSubmit}
+        onClose={() => setShowQuestions(false)}
+      />
     </div>
   );
 };

@@ -1,4 +1,5 @@
 import { CodeFile } from "@/components/CodePanel";
+import { AIQuestion } from "@/components/QuestionsDialog";
 
 const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-website`;
 
@@ -6,6 +7,7 @@ export interface GenerationResult {
   reply: string;
   html: string;
   files: CodeFile[];
+  questions?: AIQuestion[];
 }
 
 interface StreamCallbacks {
@@ -108,7 +110,26 @@ export async function streamGenerateWebsite(
     }
   }
 
-  // Parse the result
+  // Check for questions
+  const questionsStartIdx = fullContent.indexOf("|||QUESTIONS_START|||");
+  const questionsEndIdx = fullContent.indexOf("|||QUESTIONS_END|||");
+  
+  if (questionsStartIdx !== -1 && questionsEndIdx !== -1) {
+    const questionsJson = fullContent.slice(
+      questionsStartIdx + "|||QUESTIONS_START|||".length,
+      questionsEndIdx
+    ).trim();
+    
+    try {
+      const questions: AIQuestion[] = JSON.parse(questionsJson);
+      callbacks.onComplete({ reply: "", html: "", files: [], questions });
+      return;
+    } catch (e) {
+      console.error("Failed to parse questions JSON:", e);
+    }
+  }
+
+  // Parse the code result
   const markerIdx = fullContent.indexOf("|||CODE_START|||");
   if (markerIdx !== -1) {
     const textPart = fullContent.slice(0, markerIdx).trim();
@@ -118,7 +139,6 @@ export async function streamGenerateWebsite(
     let files: CodeFile[] = [];
 
     try {
-      // Extract JSON - find first { and last }
       const jsonStart = codePart.indexOf("{");
       const jsonEnd = codePart.lastIndexOf("}");
       if (jsonStart !== -1 && jsonEnd !== -1) {
@@ -137,7 +157,6 @@ export async function streamGenerateWebsite(
 
     callbacks.onComplete({ reply: textPart, html, files });
   } else {
-    // No code generated - just a conversation
     callbacks.onComplete({ reply: fullContent.trim(), html: "", files: [] });
   }
 }
