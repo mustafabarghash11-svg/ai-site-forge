@@ -91,6 +91,16 @@ const Index = () => {
           });
         },
         onComplete: (result) => {
+          // Handle clarifying questions
+          if (result.questions && result.questions.length > 0) {
+            setAiQuestions(result.questions);
+            setShowQuestions(true);
+            setPendingUserMessage(content);
+            setIsGenerating(false);
+            setIsThinking(false);
+            return;
+          }
+
           if (result.reply) {
             setMessages((prev) => {
               const last = prev[prev.length - 1];
