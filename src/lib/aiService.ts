@@ -30,6 +30,71 @@ interface ChatMsg {
   content: string;
 }
 
+// Build a fallback thought block from the user message if AI doesn't provide one
+function buildFallbackThought(userMessage: string): ThoughtBlock {
+  const msg = userMessage.toLowerCase();
+
+  let title = "Building your website";
+  let steps = [
+    "Designing the layout and structure",
+    "Writing HTML and CSS code",
+    "Adding JavaScript interactions",
+    "Making it responsive",
+  ];
+
+  if (msg.includes("portfolio") || msg.includes("personal")) {
+    title = "Build personal portfolio site";
+    steps = [
+      "Design hero and about sections",
+      "Build projects showcase grid",
+      "Add contact form and links",
+      "Polish animations and styling",
+    ];
+  } else if (msg.includes("ecommerce") || msg.includes("shop") || msg.includes("store") || msg.includes("product")) {
+    title = "Create e-commerce landing page";
+    steps = [
+      "Design hero and product sections",
+      "Build product cards and grid",
+      "Add cart and checkout flow",
+      "Style with modern design",
+    ];
+  } else if (msg.includes("dashboard") || msg.includes("admin") || msg.includes("saas")) {
+    title = "Build SaaS dashboard UI";
+    steps = [
+      "Create sidebar navigation",
+      "Build analytics chart components",
+      "Add data tables and stats",
+      "Implement dark theme styling",
+    ];
+  } else if (msg.includes("landing") || msg.includes("startup")) {
+    title = "Create startup landing page";
+    steps = [
+      "Design hero with CTA section",
+      "Build features and pricing",
+      "Add testimonials section",
+      "Finalize and polish design",
+    ];
+  } else if (msg.includes("blog") || msg.includes("article")) {
+    title = "Build blog website";
+    steps = [
+      "Design blog layout and header",
+      "Create article cards grid",
+      "Add category and tag filters",
+      "Style typography and reading view",
+    ];
+  } else if (msg.includes("auth") || msg.includes("login") || msg.includes("register")) {
+    title = "Create auth and dashboard pages";
+    steps = [
+      "Create database tables and RLS",
+      "Implement auth with OAuth",
+      "Build projects dashboard page",
+      "Update routing and auth guards",
+    ];
+  }
+
+  return { title, steps };
+}
+
 export async function streamGenerateWebsite(
   messages: ChatMsg[],
   callbacks: StreamCallbacks
@@ -67,8 +132,12 @@ export async function streamGenerateWebsite(
   let thoughtParsed = false;
   let thoughtBlock: ThoughtBlock | null = null;
   let currentStepIndex = -1;
+  let fallbackEmitted = false;
+  let charsAfterStart = 0; // chars received after thinking stopped
 
-  // Helper: try to extract and emit thought as content accumulates
+  // The last user message (used for fallback thought)
+  const lastUserMsg = messages.filter((m) => m.role === "user").pop()?.content || "";
+
   const tryParseThought = (content: string) => {
     if (thoughtParsed) return;
     const start = content.indexOf("|||THOUGHT_START|||");
@@ -79,6 +148,7 @@ export async function streamGenerateWebsite(
         const parsed: ThoughtBlock = JSON.parse(json);
         thoughtBlock = parsed;
         thoughtParsed = true;
+        fallbackEmitted = true; // real thought found, no need for fallback
         callbacks.onThought?.(parsed);
         currentStepIndex = 0;
         callbacks.onStepComplete?.(0);
@@ -86,16 +156,40 @@ export async function streamGenerateWebsite(
     }
   };
 
-  // Simulate steps completing as text streams in
+  // Emit fallback thought if AI hasn't sent one after ~200 chars
+  const tryEmitFallback = () => {
+    if (thoughtParsed || fallbackEmitted) return;
+    // Check if this looks like a code-generating response (not questions/chat)
+    const hasQuestionsMarker = fullContent.includes("|||QUESTIONS_START|||");
+    if (hasQuestionsMarker) return; // it's asking questions, no thought needed
+
+    if (charsAfterStart > 200) {
+      // AI didn't include thought block — build fallback
+      const fallback = buildFallbackThought(lastUserMsg);
+      thoughtBlock = fallback;
+      fallbackEmitted = true;
+      callbacks.onThought?.(fallback);
+      currentStepIndex = 0;
+      callbacks.onStepComplete?.(0);
+    }
+  };
+
+  // Advance steps based on content length
   const tryAdvanceSteps = (content: string) => {
     if (!thoughtBlock || currentStepIndex >= thoughtBlock.steps.length - 1) return;
-    // Each step completes roughly after each 600 chars of content past the thought block
-    const thoughtEnd = content.indexOf("|||THOUGHT_END|||");
-    if (thoughtEnd === -1) return;
-    const afterThought = content.slice(thoughtEnd + "|||THOUGHT_END|||".length);
-    const charsPerStep = 600;
+
+    let afterThoughtLen: number;
+    const thoughtEndIdx = content.indexOf("|||THOUGHT_END|||");
+    if (thoughtEndIdx !== -1) {
+      afterThoughtLen = content.slice(thoughtEndIdx + "|||THOUGHT_END|||".length).length;
+    } else {
+      // fallback thought — measure from start of content
+      afterThoughtLen = charsAfterStart;
+    }
+
+    const charsPerStep = 500;
     const expectedStep = Math.min(
-      Math.floor(afterThought.length / charsPerStep),
+      Math.floor(afterThoughtLen / charsPerStep),
       thoughtBlock.steps.length - 1
     );
     if (expectedStep > currentStepIndex) {
@@ -129,32 +223,41 @@ export async function streamGenerateWebsite(
         const content = parsed.choices?.[0]?.delta?.content as string | undefined;
         if (content) {
           fullContent += content;
+          charsAfterStart += content.length;
 
-          // Try to parse thought block as it arrives
+          // Try to parse real thought block
           tryParseThought(fullContent);
+          // Try fallback if no thought yet
+          tryEmitFallback();
+          // Advance steps
           tryAdvanceSteps(fullContent);
 
-          // Only stream the visible text part (after THOUGHT_END, before CODE_START)
+          // Determine what text to stream to user
           const thoughtEndMarker = "|||THOUGHT_END|||";
           const codeStartMarker = "|||CODE_START|||";
           const thoughtEndIdx = fullContent.indexOf(thoughtEndMarker);
           const codeMarkerIdx = fullContent.indexOf(codeStartMarker);
 
-          if (thoughtEndIdx !== -1 && codeMarkerIdx === -1) {
-            // Stream text between thought block and code marker
+          const hasThoughtStart = fullContent.includes("|||THOUGHT_START|||");
+
+          if (codeMarkerIdx !== -1) {
+            // Don't stream anything once we hit code marker
+          } else if (thoughtEndIdx !== -1) {
+            // Stream text after the real thought block
             const visibleStart = thoughtEndIdx + thoughtEndMarker.length;
-            const prevVisibleLen = Math.max(0, fullContent.length - content.length - visibleStart);
-            const newVisible = fullContent.slice(visibleStart);
-            if (newVisible.length > prevVisibleLen) {
+            const prevLen = fullContent.length - content.length;
+            if (prevLen < visibleStart) {
+              // This chunk straddles the boundary
+              const newPart = fullContent.slice(visibleStart);
+              if (newPart) callbacks.onTextDelta(newPart);
+            } else {
               callbacks.onTextDelta(content);
             }
-          } else if (thoughtEndIdx === -1 && codeMarkerIdx === -1) {
-            // No thought block yet - might be a conversational response
-            const hasThoughtStart = fullContent.includes("|||THOUGHT_START|||");
-            if (!hasThoughtStart) {
-              callbacks.onTextDelta(content);
-            }
+          } else if (!hasThoughtStart) {
+            // No thought block at all — stream directly (conversational or fallback path)
+            callbacks.onTextDelta(content);
           }
+          // else: we're inside |||THOUGHT_START||| ... |||THOUGHT_END||| — don't stream
         }
       } catch {
         textBuffer = line + "\n" + textBuffer;
@@ -163,7 +266,7 @@ export async function streamGenerateWebsite(
     }
   }
 
-  // Flush remaining
+  // Flush remaining buffer
   if (textBuffer.trim()) {
     for (let raw of textBuffer.split("\n")) {
       if (!raw) continue;
@@ -202,17 +305,17 @@ export async function streamGenerateWebsite(
     }
   }
 
-  // Strip thought block from content before parsing the rest
+  // Strip real thought block from content before parsing
   let processedContent = fullContent;
-  const thoughtStart = processedContent.indexOf("|||THOUGHT_START|||");
-  const thoughtEnd = processedContent.indexOf("|||THOUGHT_END|||");
-  if (thoughtStart !== -1 && thoughtEnd !== -1) {
+  const tStart = processedContent.indexOf("|||THOUGHT_START|||");
+  const tEnd = processedContent.indexOf("|||THOUGHT_END|||");
+  if (tStart !== -1 && tEnd !== -1) {
     processedContent =
-      processedContent.slice(0, thoughtStart) +
-      processedContent.slice(thoughtEnd + "|||THOUGHT_END|||".length);
+      processedContent.slice(0, tStart) +
+      processedContent.slice(tEnd + "|||THOUGHT_END|||".length);
   }
 
-  // Parse the code result
+  // Parse code result
   const markerIdx = processedContent.indexOf("|||CODE_START|||");
   if (markerIdx !== -1) {
     const textPart = processedContent.slice(0, markerIdx).trim();
