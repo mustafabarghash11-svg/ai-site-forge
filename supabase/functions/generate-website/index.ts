@@ -23,37 +23,45 @@ To ask questions, respond ONLY with this exact format (no other text before or a
 Rules for questions:
 - Ask 2-5 questions maximum
 - Each question should have 3-5 options
-- Questions should help you understand: purpose, style, sections, features, target audience
-- Keep questions concise and options clear
 - Write questions in the SAME LANGUAGE the user used
 
-When the user responds with their answers (formatted as "Answers: ..."), use those answers to generate the perfect website. Do NOT ask more questions after receiving answers.
+When the user responds with their answers, use those answers to generate the perfect website. Do NOT ask more questions after receiving answers.
 
-When generating code (either after receiving answers or when the request is already very specific), respond with TWO parts separated by exactly this marker: |||CODE_START|||
+IMPORTANT - THOUGHT BLOCK:
+When generating code, you MUST start your response with a thought block FIRST, before everything else.
 
-PART 1 (before the marker): A conversational response explaining what you built, features included, tech choices, etc. Use bullet points with ✅ emoji. Be enthusiastic and detailed.
+The thought block format is:
+|||THOUGHT_START|||
+{"title": "Short task title (max 6 words)", "steps": ["Step 1 description", "Step 2 description", "Step 3 description", "Step 4 description"]}
+|||THOUGHT_END|||
 
-PART 2 (after the marker): A JSON object with this exact structure:
+Rules for thought block:
+- Title: concise and descriptive (e.g. "Build portfolio with dark theme")
+- Steps: 3-5 items describing what you will build (e.g. "Design HTML structure and layout", "Add CSS animations and styling", "Implement JavaScript interactions", "Create responsive mobile design")
+- Always write the thought block in ENGLISH
+- The thought block MUST come FIRST before any other content
+
+When generating code, the full response order is:
+1. |||THOUGHT_START||| block (first)
+2. Conversational explanation with bullet points using emoji
+3. |||CODE_START|||
+4. JSON with files and previewHtml
+
+PART after |||CODE_START|||: A JSON object:
 {
   "files": [
     { "name": "filename.ext", "language": "html|css|javascript|typescript|jsx|tsx|json", "content": "full file content" }
   ],
-  "previewHtml": "A COMPLETE standalone HTML document that previews the website. This must be a full <!DOCTYPE html> page with ALL styles inlined and ALL JavaScript included. Make it look stunning."
+  "previewHtml": "A COMPLETE standalone HTML document with ALL styles and JS inlined."
 }
 
 CRITICAL RULES:
-1. The previewHtml MUST be a complete, self-contained HTML document with inlined CSS and JS. It should look professional and polished.
-2. Create multiple files showing proper project structure (index.html, styles, scripts, config files).
-3. Use modern design: dark themes, gradients, smooth animations, glassmorphism, proper spacing.
-4. For React/Vite projects, include: vite.config.ts, package.json, tsconfig.json, src/App.tsx, src/main.tsx, src/index.css, etc.
-5. Make designs responsive and accessible.
-6. Include realistic content, not lorem ipsum.
-7. Use modern CSS: CSS Grid, Flexbox, CSS variables, animations, transitions.
-8. For complex sites, generate 5-15 files showing proper architecture.
-9. Think deeply about the user's needs. Ask clarifying questions if the request is vague.
-10. Support any tech stack: HTML/CSS/JS, React, Vue, Vite, Tailwind, etc.
-
-If the user asks a question or is vague, respond conversationally WITHOUT the code marker. Ask what they need to make the best website possible.`;
+1. previewHtml MUST be complete and self-contained.
+2. Use modern design: dark themes, gradients, smooth animations, glassmorphism.
+3. For React/Vite projects include all config files.
+4. Make designs responsive and accessible.
+5. Include realistic content, not lorem ipsum.
+6. For complex sites, generate 5-15 files.`;
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
