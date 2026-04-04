@@ -105,8 +105,29 @@ const Index = () => {
     saveAs(blob, "ai-site-forge-project.zip");
     toast({ title: "تم التحميل!", description: "تم تنزيل ملفات المشروع بنجاح" });
   };
+  const handleDatabaseOps = async (database: DatabaseOperation) => {
+    if (!projectId) return;
+    for (const table of database.tables) {
+      try {
+        await createTable(projectId, table.name, table.columns);
+        if (table.sampleData) {
+          for (const row of table.sampleData) {
+            await insertRow(projectId, table.name, row);
+          }
+        }
+        toast({ title: "قاعدة البيانات", description: `تم إنشاء جدول "${table.name}" مع البيانات` });
+      } catch (e: any) {
+        if (e.message?.includes("duplicate")) {
+          toast({ title: "تنبيه", description: `الجدول "${table.name}" موجود بالفعل` });
+        } else {
+          toast({ title: "خطأ", description: e.message, variant: "destructive" });
+        }
+      }
+    }
+    setRightPanel("database");
+  };
 
-  const handleSendMessage = async (content: string) => {
+
     const userMsg: ChatMessage = {
       id: Date.now().toString(),
       role: "user",
