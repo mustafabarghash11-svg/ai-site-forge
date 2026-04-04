@@ -390,10 +390,9 @@ export async function streamGenerateWebsite(
     }
 
     if (!html && files.length === 0) {
-      // Last resort: if we found no parseable code, show the text as reply
-      callbacks.onComplete({ reply: textPart || processedContent.trim(), html: "", files: [], thought: thoughtBlock || undefined });
+      callbacks.onComplete({ reply: textPart || processedContent.trim(), html: "", files: [], thought: thoughtBlock || undefined, database });
     } else {
-      callbacks.onComplete({ reply: textPart, html, files, thought: thoughtBlock || undefined });
+      callbacks.onComplete({ reply: textPart, html, files, thought: thoughtBlock || undefined, database });
     }
   } else {
     // No CODE_START marker — check if content has HTML directly
@@ -407,6 +406,7 @@ export async function streamGenerateWebsite(
       html: fallbackHtml,
       files: fallbackHtml ? [{ name: "index.html", language: "html", content: fallbackHtml }] : [],
       thought: thoughtBlock || undefined,
+      database,
     });
   }
 }
