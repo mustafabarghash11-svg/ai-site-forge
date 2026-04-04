@@ -32,6 +32,7 @@ interface StreamCallbacks {
   onThinking: (thinking: boolean) => void;
   onThought?: (thought: ThoughtBlock) => void;
   onStepComplete?: (stepIndex: number) => void;
+  onDatabase?: (database: DatabaseOperation) => void;
 }
 
 interface ChatMsg {
