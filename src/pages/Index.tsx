@@ -228,6 +228,11 @@ const Index = () => {
           }
           if (result.files.length > 0) setCodeFiles(result.files);
 
+          // Handle database operations from AI
+          if (result.database && projectId) {
+            handleDatabaseOps(result.database);
+          }
+
           // Clear active thought
           setActiveThought(null);
           setActiveCompletedStep(-1);
