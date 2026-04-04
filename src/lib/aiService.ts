@@ -325,6 +325,24 @@ export async function streamGenerateWebsite(
       processedContent.slice(tEnd + "|||THOUGHT_END|||".length);
   }
 
+  // Parse database block
+  let database: DatabaseOperation | undefined;
+  const dbStart = processedContent.indexOf("|||DATABASE_START|||");
+  const dbEnd = processedContent.indexOf("|||DATABASE_END|||");
+  if (dbStart !== -1 && dbEnd !== -1) {
+    const dbJson = processedContent.slice(dbStart + "|||DATABASE_START|||".length, dbEnd).trim();
+    try {
+      database = JSON.parse(dbJson);
+      callbacks.onDatabase?.(database!);
+    } catch (e) {
+      console.error("Failed to parse database JSON:", e);
+    }
+    // Remove database block from processed content
+    processedContent =
+      processedContent.slice(0, dbStart) +
+      processedContent.slice(dbEnd + "|||DATABASE_END|||".length);
+  }
+
   // Parse code result
   const markerIdx = processedContent.indexOf("|||CODE_START|||");
   if (markerIdx !== -1) {
