@@ -38,6 +38,44 @@ export type Database = {
         }
         Relationships: []
       }
+      project_tables: {
+        Row: {
+          columns: Json
+          created_at: string
+          id: string
+          project_id: string
+          rows: Json
+          table_name: string
+          updated_at: string
+        }
+        Insert: {
+          columns?: Json
+          created_at?: string
+          id?: string
+          project_id: string
+          rows?: Json
+          table_name: string
+          updated_at?: string
+        }
+        Update: {
+          columns?: Json
+          created_at?: string
+          id?: string
+          project_id?: string
+          rows?: Json
+          table_name?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_tables_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       projects: {
         Row: {
           chat_history: Json | null
