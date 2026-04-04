@@ -322,6 +322,16 @@ const Index = () => {
               >
                 <Code2 className="w-3.5 h-3.5" /> Code
               </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setRightPanel("database")}
+                className={`h-7 text-xs gap-1.5 ${
+                  rightPanel === "database" ? "bg-secondary text-primary" : "text-muted-foreground"
+                }`}
+              >
+                <Database className="w-3.5 h-3.5" /> Database
+              </Button>
             </div>
             <div className="flex items-center gap-1">
               <Button
