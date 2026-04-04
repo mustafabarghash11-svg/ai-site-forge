@@ -8,6 +8,7 @@ import CodePanel, { CodeFile } from "@/components/CodePanel";
 import DatabasePanel from "@/components/DatabasePanel";
 import QuestionsDialog, { AIQuestion } from "@/components/QuestionsDialog";
 import { streamGenerateWebsite, ThoughtBlock } from "@/lib/aiService";
+import { Code2, Eye, PanelRightOpen, Download, ArrowRight, Database } from "lucide-react";
 import JSZip from "jszip";
 import { saveAs } from "file-saver";
 import { Button } from "@/components/ui/button";
