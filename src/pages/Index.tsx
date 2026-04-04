@@ -127,7 +127,7 @@ const Index = () => {
     setRightPanel("database");
   };
 
-
+  const handleSendMessage = async (content: string) => {
     const userMsg: ChatMessage = {
       id: Date.now().toString(),
       role: "user",
