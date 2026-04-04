@@ -328,7 +328,9 @@ export async function streamGenerateWebsite(
       const jsonStart = codePart.indexOf("{");
       const jsonEnd = codePart.lastIndexOf("}");
       if (jsonStart !== -1 && jsonEnd !== -1) {
-        const jsonStr = codePart.slice(jsonStart, jsonEnd + 1);
+        let jsonStr = codePart.slice(jsonStart, jsonEnd + 1);
+        // Clean common issues: markdown code fences inside JSON
+        jsonStr = jsonStr.replace(/```[\w]*\n?/g, "");
         const data = JSON.parse(jsonStr);
         html = data.previewHtml || "";
         files = (data.files || []).map((f: any) => ({
@@ -339,14 +341,43 @@ export async function streamGenerateWebsite(
       }
     } catch (e) {
       console.error("Failed to parse code JSON:", e);
+      // Fallback: try to extract previewHtml with regex
+      try {
+        const htmlMatch = codePart.match(/"previewHtml"\s*:\s*"([\s\S]*?)"\s*[,}]/);
+        if (htmlMatch) {
+          html = JSON.parse('"' + htmlMatch[1] + '"');
+        }
+        // Try to extract files array
+        const filesMatch = codePart.match(/"files"\s*:\s*(\[[\s\S]*?\])\s*[,}]/);
+        if (filesMatch) {
+          try {
+            files = JSON.parse(filesMatch[1]).map((f: any) => ({
+              name: f.name || "file",
+              language: f.language || "html",
+              content: f.content || "",
+            }));
+          } catch {}
+        }
+      } catch {}
     }
 
-    callbacks.onComplete({ reply: textPart, html, files, thought: thoughtBlock || undefined });
+    if (!html && files.length === 0) {
+      // Last resort: if we found no parseable code, show the text as reply
+      callbacks.onComplete({ reply: textPart || processedContent.trim(), html: "", files: [], thought: thoughtBlock || undefined });
+    } else {
+      callbacks.onComplete({ reply: textPart, html, files, thought: thoughtBlock || undefined });
+    }
   } else {
+    // No CODE_START marker — check if content has HTML directly
+    let fallbackHtml = "";
+    const htmlDocMatch = processedContent.match(/(<!DOCTYPE html[\s\S]*<\/html>)/i);
+    if (htmlDocMatch) {
+      fallbackHtml = htmlDocMatch[1];
+    }
     callbacks.onComplete({
       reply: processedContent.trim(),
-      html: "",
-      files: [],
+      html: fallbackHtml,
+      files: fallbackHtml ? [{ name: "index.html", language: "html", content: fallbackHtml }] : [],
       thought: thoughtBlock || undefined,
     });
   }
