@@ -8,12 +8,21 @@ export interface ThoughtBlock {
   steps: string[];
 }
 
+export interface DatabaseOperation {
+  tables: {
+    name: string;
+    columns: { name: string; type: string }[];
+    sampleData?: Record<string, any>[];
+  }[];
+}
+
 export interface GenerationResult {
   reply: string;
   html: string;
   files: CodeFile[];
   questions?: AIQuestion[];
   thought?: ThoughtBlock;
+  database?: DatabaseOperation;
 }
 
 interface StreamCallbacks {
