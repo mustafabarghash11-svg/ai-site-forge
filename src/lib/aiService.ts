@@ -8,12 +8,21 @@ export interface ThoughtBlock {
   steps: string[];
 }
 
+export interface DatabaseOperation {
+  tables: {
+    name: string;
+    columns: { name: string; type: string }[];
+    sampleData?: Record<string, any>[];
+  }[];
+}
+
 export interface GenerationResult {
   reply: string;
   html: string;
   files: CodeFile[];
   questions?: AIQuestion[];
   thought?: ThoughtBlock;
+  database?: DatabaseOperation;
 }
 
 interface StreamCallbacks {
@@ -23,6 +32,7 @@ interface StreamCallbacks {
   onThinking: (thinking: boolean) => void;
   onThought?: (thought: ThoughtBlock) => void;
   onStepComplete?: (stepIndex: number) => void;
+  onDatabase?: (database: DatabaseOperation) => void;
 }
 
 interface ChatMsg {
@@ -315,6 +325,24 @@ export async function streamGenerateWebsite(
       processedContent.slice(tEnd + "|||THOUGHT_END|||".length);
   }
 
+  // Parse database block
+  let database: DatabaseOperation | undefined;
+  const dbStart = processedContent.indexOf("|||DATABASE_START|||");
+  const dbEnd = processedContent.indexOf("|||DATABASE_END|||");
+  if (dbStart !== -1 && dbEnd !== -1) {
+    const dbJson = processedContent.slice(dbStart + "|||DATABASE_START|||".length, dbEnd).trim();
+    try {
+      database = JSON.parse(dbJson);
+      callbacks.onDatabase?.(database!);
+    } catch (e) {
+      console.error("Failed to parse database JSON:", e);
+    }
+    // Remove database block from processed content
+    processedContent =
+      processedContent.slice(0, dbStart) +
+      processedContent.slice(dbEnd + "|||DATABASE_END|||".length);
+  }
+
   // Parse code result
   const markerIdx = processedContent.indexOf("|||CODE_START|||");
   if (markerIdx !== -1) {
@@ -362,10 +390,9 @@ export async function streamGenerateWebsite(
     }
 
     if (!html && files.length === 0) {
-      // Last resort: if we found no parseable code, show the text as reply
-      callbacks.onComplete({ reply: textPart || processedContent.trim(), html: "", files: [], thought: thoughtBlock || undefined });
+      callbacks.onComplete({ reply: textPart || processedContent.trim(), html: "", files: [], thought: thoughtBlock || undefined, database });
     } else {
-      callbacks.onComplete({ reply: textPart, html, files, thought: thoughtBlock || undefined });
+      callbacks.onComplete({ reply: textPart, html, files, thought: thoughtBlock || undefined, database });
     }
   } else {
     // No CODE_START marker — check if content has HTML directly
@@ -379,6 +406,7 @@ export async function streamGenerateWebsite(
       html: fallbackHtml,
       files: fallbackHtml ? [{ name: "index.html", language: "html", content: fallbackHtml }] : [],
       thought: thoughtBlock || undefined,
+      database,
     });
   }
 }

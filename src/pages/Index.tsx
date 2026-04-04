@@ -5,9 +5,11 @@ import { useAuth } from "@/hooks/useAuth";
 import ChatPanel, { ChatMessage } from "@/components/ChatPanel";
 import PreviewPanel from "@/components/PreviewPanel";
 import CodePanel, { CodeFile } from "@/components/CodePanel";
+import DatabasePanel from "@/components/DatabasePanel";
 import QuestionsDialog, { AIQuestion } from "@/components/QuestionsDialog";
-import { streamGenerateWebsite, ThoughtBlock } from "@/lib/aiService";
-import { Code2, Eye, PanelRightOpen, Download, ArrowRight } from "lucide-react";
+import { streamGenerateWebsite, ThoughtBlock, DatabaseOperation } from "@/lib/aiService";
+import { createTable, insertRow } from "@/lib/databaseService";
+import { Code2, Eye, PanelRightOpen, Download, ArrowRight, Database } from "lucide-react";
 import JSZip from "jszip";
 import { saveAs } from "file-saver";
 import { Button } from "@/components/ui/button";
@@ -22,7 +24,7 @@ const Index = () => {
   const [isThinking, setIsThinking] = useState(false);
   const [previewHtml, setPreviewHtml] = useState("");
   const [codeFiles, setCodeFiles] = useState<CodeFile[]>([]);
-  const [rightPanel, setRightPanel] = useState<"preview" | "code">("preview");
+  const [rightPanel, setRightPanel] = useState<"preview" | "code" | "database">("preview");
   const [showRightPanel, setShowRightPanel] = useState(true);
   const assistantContentRef = useRef("");
   const [aiQuestions, setAiQuestions] = useState<AIQuestion[]>([]);
@@ -102,6 +104,27 @@ const Index = () => {
     const blob = await zip.generateAsync({ type: "blob" });
     saveAs(blob, "ai-site-forge-project.zip");
     toast({ title: "تم التحميل!", description: "تم تنزيل ملفات المشروع بنجاح" });
+  };
+  const handleDatabaseOps = async (database: DatabaseOperation) => {
+    if (!projectId) return;
+    for (const table of database.tables) {
+      try {
+        await createTable(projectId, table.name, table.columns);
+        if (table.sampleData) {
+          for (const row of table.sampleData) {
+            await insertRow(projectId, table.name, row);
+          }
+        }
+        toast({ title: "قاعدة البيانات", description: `تم إنشاء جدول "${table.name}" مع البيانات` });
+      } catch (e: any) {
+        if (e.message?.includes("duplicate")) {
+          toast({ title: "تنبيه", description: `الجدول "${table.name}" موجود بالفعل` });
+        } else {
+          toast({ title: "خطأ", description: e.message, variant: "destructive" });
+        }
+      }
+    }
+    setRightPanel("database");
   };
 
   const handleSendMessage = async (content: string) => {
@@ -226,6 +249,11 @@ const Index = () => {
           }
           if (result.files.length > 0) setCodeFiles(result.files);
 
+          // Handle database operations from AI
+          if (result.database && projectId) {
+            handleDatabaseOps(result.database);
+          }
+
           // Clear active thought
           setActiveThought(null);
           setActiveCompletedStep(-1);
@@ -321,6 +349,16 @@ const Index = () => {
               >
                 <Code2 className="w-3.5 h-3.5" /> Code
               </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setRightPanel("database")}
+                className={`h-7 text-xs gap-1.5 ${
+                  rightPanel === "database" ? "bg-secondary text-primary" : "text-muted-foreground"
+                }`}
+              >
+                <Database className="w-3.5 h-3.5" /> Database
+              </Button>
             </div>
             <div className="flex items-center gap-1">
               <Button
@@ -342,11 +380,13 @@ const Index = () => {
               </Button>
             </div>
           </div>
-          <div className="flex-1 min-h-0">
+          <div className="flex-1 min-h-0 relative">
             {rightPanel === "preview" ? (
               <PreviewPanel html={previewHtml} isGenerating={isGenerating} />
-            ) : (
+            ) : rightPanel === "code" ? (
               <CodePanel files={codeFiles} />
+            ) : (
+              projectId ? <DatabasePanel projectId={projectId} /> : null
             )}
           </div>
         </div>
