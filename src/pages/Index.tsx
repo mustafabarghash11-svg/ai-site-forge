@@ -353,11 +353,13 @@ const Index = () => {
               </Button>
             </div>
           </div>
-          <div className="flex-1 min-h-0">
+          <div className="flex-1 min-h-0 relative">
             {rightPanel === "preview" ? (
               <PreviewPanel html={previewHtml} isGenerating={isGenerating} />
-            ) : (
+            ) : rightPanel === "code" ? (
               <CodePanel files={codeFiles} />
+            ) : (
+              projectId ? <DatabasePanel projectId={projectId} /> : null
             )}
           </div>
         </div>
