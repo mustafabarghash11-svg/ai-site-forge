@@ -22,7 +22,7 @@ const Index = () => {
   const [isThinking, setIsThinking] = useState(false);
   const [previewHtml, setPreviewHtml] = useState("");
   const [codeFiles, setCodeFiles] = useState<CodeFile[]>([]);
-  const [rightPanel, setRightPanel] = useState<"preview" | "code">("preview");
+  const [rightPanel, setRightPanel] = useState<"preview" | "code" | "database">("preview");
   const [showRightPanel, setShowRightPanel] = useState(true);
   const assistantContentRef = useRef("");
   const [aiQuestions, setAiQuestions] = useState<AIQuestion[]>([]);
