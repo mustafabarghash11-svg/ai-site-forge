@@ -89,7 +89,9 @@ CRITICAL RULES:
 3. For React/Vite projects include all config files.
 4. Make designs responsive and accessible.
 5. Include realistic content, not lorem ipsum.
-6. For complex sites, generate 5-15 files.`;
+6. For complex sites, generate 5-15 files.
+7. When the user asks for a MODIFICATION (e.g. "change the color", "add a section", "modify the header"), do NOT ask questions. Just apply the modification to the existing code and return the full updated code. Always include the complete updated previewHtml and files.
+8. For modifications, include a thought block describing what you're changing.`;
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {

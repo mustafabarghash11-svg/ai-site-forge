@@ -144,10 +144,32 @@ const Index = () => {
     setActiveThought(null);
     setActiveCompletedStep(-1);
 
-    const chatHistory = [...messages, userMsg].map((m) => ({
-      role: m.role as "user" | "assistant",
-      content: m.content,
-    }));
+    // Trim previous assistant messages to avoid exceeding token limits on modification requests
+    const chatHistory = [...messages, userMsg].map((m) => {
+      if (m.role === "assistant") {
+        // Strip code blocks and keep only the conversational part
+        let trimmed = m.content;
+        const codeIdx = trimmed.indexOf("|||CODE_START|||");
+        if (codeIdx !== -1) {
+          trimmed = trimmed.slice(0, codeIdx).trim();
+        }
+        const dbIdx = trimmed.indexOf("|||DATABASE_START|||");
+        if (dbIdx !== -1) {
+          trimmed = trimmed.slice(0, dbIdx).trim();
+        }
+        // Also trim very long responses
+        if (trimmed.length > 1500) {
+          trimmed = trimmed.slice(0, 1500) + "\n[...truncated]";
+        }
+        return { role: "assistant" as const, content: trimmed || "تم إنشاء الموقع بنجاح." };
+      }
+      return { role: m.role as "user" | "assistant", content: m.content };
+    });
+
+    // Keep only last 10 messages to avoid very large payloads
+    const recentHistory = chatHistory.length > 10 
+      ? chatHistory.slice(chatHistory.length - 10) 
+      : chatHistory;
 
     // Track the thought for attaching to the final message
     let capturedThought: ThoughtBlock | null = null;
@@ -155,7 +177,7 @@ const Index = () => {
     let aiMsgId: string | null = null;
 
     try {
-      await streamGenerateWebsite(chatHistory, {
+      await streamGenerateWebsite(recentHistory, {
         onThinking: (thinking) => {
           setIsThinking(thinking);
           if (!thinking) {
