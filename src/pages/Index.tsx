@@ -177,7 +177,7 @@ const Index = () => {
     let aiMsgId: string | null = null;
 
     try {
-      await streamGenerateWebsite(chatHistory, {
+      await streamGenerateWebsite(recentHistory, {
         onThinking: (thinking) => {
           setIsThinking(thinking);
           if (!thinking) {
